@@ -1,5 +1,3 @@
-from typing import Tuple, Any
-
 import matplotlib.pyplot as plt
 import numpy as np
 from PIL import Image
@@ -39,21 +37,47 @@ def find_nearest_zero_point(arr: np.ndarray, i: int, j: int) -> tuple[int, int] 
     return nearest_point[0], nearest_point[1]
 
 
-def get_array_from_path(path_to_tiff):
+def get_array_from_path(path_to_tiff: str) -> np.ndarray:
+    """
+    Reads tif file ana returns numpy ndarray
+    Args:
+        path_to_tiff:
+
+    Returns: tif array
+
+    """
     tif_image = Image.open(path_to_tiff)
     return np.array(tif_image)
 
 
-def create_mask(array):
+def create_mask(array: np.ndarray) -> np.ndarray:
+    """
+    Takes array where elements >= 0 is a buildings and <= are background
+    And creates a binary mask (1 - buildings, 0 - other)
+    Args:
+        array:
+
+    Returns:
+
+    """
     new_arr = np.copy(array)
     new_arr[new_arr <= 0] = 0
     new_arr[new_arr >= 1] = 1
     return new_arr
 
 
-def clear_background(array, mask):
+def clear_background(array: np.ndarray, mask_heights: np.ndarray):
+    """
+    Takes a height array and create height array where mask=0 are zeros
+    Args:
+        array:
+        mask_heights:
+
+    Returns:
+
+    """
     new_array = np.copy(array)
-    new_array[mask == 0] = 0
+    new_array[mask_heights == 0] = 0
     return new_array
 
 
@@ -64,7 +88,8 @@ def plot_images(*images, nrows=1, ncols=None, figsize=None):
     Parameters:
         *images (numpy.ndarray): One or more numpy arrays representing the images to plot.
         nrows (int): Number of rows in the grid. Default is 1.
-        ncols (int): Number of columns in the grid. If not provided, it will be calculated based on the number of images.
+        ncols (int): Number of columns in the grid. If not provided, it will be calculated based on the number
+        of images.
         figsize (tuple): Size of the figure (width, height) in inches. If not provided, the default size will be used.
     """
     # Calculate the number of columns if not provided
@@ -90,62 +115,64 @@ def plot_images(*images, nrows=1, ncols=None, figsize=None):
         # ax.colorbar()
 
     # Adjust the spacing and show the plot
-    # fig.colorbar()
     plt.tight_layout()
     plt.show()
 
 
-tif1 = '1_232.tif'
-tif2 = '1_232_Здание.tif'
+def clear_lidar(path_all_heights: str, path_to_buildings_heights: str, plot=True) -> np.ndarray:
+    tif1_array = get_array_from_path(path_all_heights)[:, :3084]
+    tif2_array = get_array_from_path(path_to_buildings_heights)
 
-tif1_array = get_array_from_path(tif1)[:, :3084]
-tif2_array = get_array_from_path(tif2)
-print(type(tif2_array))
-print("Tail and head of unique tif1 values: ")
-print(np.unique(tif2_array)[:5], np.unique(tif2_array)[-5:])
+    if tif1_array.shape != tif2_array.shape:
+        raise ArithmeticError(f'Both tiffs must be the same shape. Gotten: {tif1_array.shape}, {tif2_array.shape}')
 
-print("Tail and head of unique tif2 values: ")
-print(np.unique(tif2_array)[:5], np.unique(tif2_array)[-5:])
+    if plot:
+        plot_images(tif1_array, tif2_array)
+    plt.imsave('input_all_heights.png', tif1_array)
+    plt.imsave('input_buildings_heights.png', tif2_array)
+    mask = create_mask(tif2_array)
+    # if plot:
+    #    plot_images(mask)
 
-plot_images(tif1_array, tif2_array)
+    new_tif1 = np.copy(tif1_array)
+    new_tif1[mask == 1] = 0
 
-mask = create_mask(tif2_array)
-print("Mask:")
-print(np.unique(mask))
-plot_images(mask)
+    print('All surface heights: ', np.unique(new_tif1))  #
+    # if plot:
+    #    plot_images(new_tif1)
 
-new_tif1 = np.copy(tif1_array)
-new_tif1[mask == 1] = 0
+    new_tif1_1 = np.copy(tif1_array)
+    new_tif1_1[mask == 0] = 0
 
-print('Высоты релфьеа: ', np.unique(new_tif1))  #
+    print('Buildings heights: ', np.unique(new_tif1_1))  #
 
-plot_images(new_tif1)
+    heights = new_tif1_1
+    heights[heights < 1] = np.unique(heights)[1]
 
-new_tif1_1 = np.copy(tif1_array)
-new_tif1_1[mask == 0] = 0
+    print('Heights before work: ', np.unique(heights)[:5], np.unique(heights)[-5:])
+    print('Shape: ', heights.shape)
 
-print('Высоты зданий: ', np.unique(new_tif1_1))  #
+    print(np.count_nonzero(heights == 247.42))
 
-heights = new_tif1_1
-heights[heights < 1] = np.unique(heights)[1]
+    heights_copy = np.copy(heights)
+    for i in range(heights.shape[0]):
+        for j in range(heights.shape[1]):
+            if mask[i][j] == 1:
+                heights[i][j] = heights[i][j] - get_local_min(heights_copy, i, j)
+            else:
+                heights[i][j] = 0
+    # if plot:
+    #    plot_images(heights)
 
-print('Heights before work: ', np.unique(heights)[:5], np.unique(heights)[-5:])
-print('Shape: ', heights.shape)
+    print("Tail and head of unique Heights values: ")
+    print(np.unique(heights)[:5], np.unique(heights)[-5:])
+    print(np.count_nonzero(heights == 247.42))
+    if plot:
+        sns.heatmap(heights)
+        plt.show()
 
-print(np.count_nonzero(heights == 247.42))
+    plt.imsave('output.png', heights)
+    return heights
 
-heights_copy = np.copy(heights)
-for i in range(heights.shape[0]):
-    for j in range(heights.shape[1]):
-        if mask[i][j] == 1:
-            heights[i][j] = heights[i][j] - get_local_min(heights_copy, i, j)
-        else:
-            heights[i][j] = 0
 
-plot_images(heights)
-print("Tail and head of unique Heights values: ")
-print(np.unique(heights)[:5], np.unique(heights)[-5:])
-print(np.count_nonzero(heights == 247.42))
-
-sns.heatmap(heights)
-plt.show()
+clear_lidar('test_images/1_232.tif', 'test_images/1_232_Здание.tif')
